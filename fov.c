@@ -364,22 +364,7 @@ static bool remove_black_bars(const struct image *image) {
     return write_code(branch, disabled, sizeof(disabled));
 }
 
-static HMODULE module;
-
-static bool sibling_path(wchar_t path[MAX_PATH], const wchar_t *name) {
-    DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
-    expect(length && length < MAX_PATH);
-
-    wcsrchr(path, L'\\')[1] = L'\0';
-    wcscat_s(path, MAX_PATH, name);
-    return true;
-}
-
-static bool read_config(struct config *config) {
-    wchar_t path[MAX_PATH];
-    if (!sibling_path(path, L"FirstLightFOV.ini"))
-        return false;
-
+static bool read_config(const wchar_t *path, struct config *config) {
     FILE *file = _wfopen(path, L"r");
     if (!file) {
         expect(errno == ENOENT);
@@ -409,14 +394,14 @@ static bool read_config(struct config *config) {
     return true;
 }
 
-static bool init_fixes(void *reserved) {
+static bool init_fixes(const wchar_t *config_path, void *reserved) {
     /* Will fail if it's LoadLibrary(), which will cause us to spectacularly
      * explode */
     expect(reserved);
 
     struct config config = {DEFAULT_FOV_MULTIPLIER, true};
     struct image image = open_image(GetModuleHandleW(NULL));
-    if (!read_config(&config))
+    if (!read_config(config_path, &config))
         return false;
 
     scale_fov(&image, config.fov_multiplier);
@@ -426,21 +411,23 @@ static bool init_fixes(void *reserved) {
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved) {
+    (void)instance;
     if (reason != DLL_PROCESS_ATTACH)
         return TRUE;
 
-    module = instance;
     wchar_t path[MAX_PATH];
     if (!GetModuleFileNameW(NULL, path, MAX_PATH))
         return TRUE;
 
-    if (_wcsicmp(wcsrchr(path, L'\\') + 1, L"007FirstLight.exe"))
+    wchar_t *name = wcsrchr(path, L'\\') + 1;
+    if (_wcsicmp(name, L"007FirstLight.exe"))
         return TRUE;
 
-    if (sibling_path(path, L"FirstLightFOV.log"))
-        log_file = _wfopen(path, L"w");
+    wcscpy(name, L"FirstLightFOV.log");
+    log_file = _wfopen(path, L"w");
 
-    init_fixes(reserved);
+    wcscpy(name, L"FirstLightFOV.ini");
+    init_fixes(path, reserved);
 
     if (log_file)
         fclose(log_file);
