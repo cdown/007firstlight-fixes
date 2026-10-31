@@ -3,15 +3,10 @@ setlocal
 
 if defined VSCMD_VER goto build
 
-set "vswhere=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-if not exist "%vswhere%" (
-    echo Visual Studio not found. >&2
-    exit /b 1
-)
-
+set "PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer;%PATH%"
 set "vsdevcmd="
 for /f "usebackq delims=" %%i in (
-    `"%vswhere%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find Common7\Tools\VsDevCmd.bat`
+    `vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find Common7\Tools\VsDevCmd.bat`
 ) do set "vsdevcmd=%%i"
 if not defined vsdevcmd (
     echo MSVC C++ tools not found. >&2
