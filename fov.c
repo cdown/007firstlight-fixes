@@ -1,4 +1,3 @@
-#include <unknwn.h>
 #include <windows.h>
 
 #include <errno.h>
@@ -26,6 +25,10 @@
 #define CONFIG_KEY_MAX 31
 #define STRINGIFY_(x) #x
 #define STRINGIFY(x) STRINGIFY_(x)
+
+#define REAL_INPUT "\\\\.\\GLOBALROOT\\SystemRoot\\System32\\dinput8.dll"
+#pragma comment(                                                               \
+    linker, "/export:DirectInput8Create=" REAL_INPUT ".DirectInput8Create")
 
 #define log_line(...)                                                          \
     do {                                                                       \
@@ -362,8 +365,6 @@ static bool remove_black_bars(const struct image *image) {
 }
 
 static HMODULE module;
-typedef HRESULT(WINAPI *create_input_fn)(HINSTANCE, DWORD, REFIID, void **,
-                                         IUnknown *);
 
 static bool sibling_path(wchar_t path[MAX_PATH], const wchar_t *name) {
     DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
@@ -406,33 +407,6 @@ static bool read_config(struct config *config) {
     fclose(file);
     expect(valid);
     return true;
-}
-
-static bool load_input(create_input_fn *create_input) {
-    wchar_t path[MAX_PATH];
-    static const wchar_t library[] = L"\\dinput8.dll";
-    UINT length = GetSystemDirectoryW(path, MAX_PATH);
-    expect(length && length + ARRAYSIZE(library) < MAX_PATH);
-    wcscat_s(path, MAX_PATH, library);
-
-    HMODULE input = LoadLibraryW(path);
-    expect(input);
-
-    *create_input =
-        (create_input_fn)GetProcAddress(input, "DirectInput8Create");
-    expect(*create_input);
-    return true;
-}
-
-__declspec(dllexport) HRESULT WINAPI DirectInput8Create(HINSTANCE instance,
-                                                        DWORD version,
-                                                        REFIID iid,
-                                                        void **output,
-                                                        IUnknown *outer) {
-    create_input_fn create_input;
-    if (!load_input(&create_input))
-        return E_FAIL;
-    return create_input(instance, version, iid, output, outer);
 }
 
 static bool init_fixes(void *reserved) {
