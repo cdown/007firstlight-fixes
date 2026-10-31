@@ -442,9 +442,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved) {
 
     init_fixes(reserved);
 
-    if (log_file) {
+    if (log_file)
         fclose(log_file);
-        log_file = NULL;
-    }
     return TRUE;
 }
