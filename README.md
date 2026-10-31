@@ -19,3 +19,13 @@ Use `build.cmd`.
 Copy `dinput8.dll` and `FirstLightFOV.ini` next to `007FirstLight.exe`.
 
 # Screenshots
+
+## Fixed
+
+![](screenshots/fov-1.4.jpg)
+![](screenshots/cutscene-no-bars.jpg)
+
+## Default
+
+![](screenshots/fov-stock.jpg)
+![](screenshots/cutscene-bars.jpg)
