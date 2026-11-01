@@ -18,4 +18,4 @@ call "%vsdevcmd%" -no_logo -arch=x64 -host_arch=x64 || exit /b 1
 pushd "%~dp0" || exit /b 1
 if not exist dist mkdir dist
 cl /nologo /std:c11 /W4 /WX /O2 /MD /LD ^
-    /D_CRT_SECURE_NO_WARNINGS fov.c /Fe:dist\dinput8.dll
+    /D_CRT_SECURE_NO_WARNINGS firstlightfixes.c /Fe:dist\dinput8.dll
