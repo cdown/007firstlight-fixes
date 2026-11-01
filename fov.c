@@ -582,7 +582,8 @@ static struct rip_reference *find_label_reference(const struct image *image,
 }
 
 static void **find_completion_vtable(const struct image *image,
-                                     const RUNTIME_FUNCTION *function) {
+                                     const RUNTIME_FUNCTION *function,
+                                     size_t *out_end) {
     size_t end = function_end(image, function);
     void **table = NULL;
 
@@ -602,6 +603,7 @@ static void **find_completion_vtable(const struct image *image,
             candidate[CALLBACK_COPY] == candidate[CALLBACK_MOVE] &&
             in_code(image, candidate[CALLBACK_INVOKE])) {
             table = candidate;
+            *out_end = i + sizeof(*reference);
             ++callback_matches;
         }
     }
@@ -719,16 +721,22 @@ static bool skip_startup(const struct image *image) {
     RUNTIME_FUNCTION *function = find_function(image, handler);
     expect(function && image->base + function->BeginAddress == handler);
 
-    /* Ask the game manager to load the latest save
+    size_t callback_built;
+    completion_vtable =
+        find_completion_vtable(image, function, &callback_built);
+    expect(completion_vtable);
+
+    /* Ask the game manager to load the latest save. The dialog lookup before
+     * this uses the same instructions, so start after the callback is built.
      *
      * lea rcx, [rip+game_manager]
      * call load_latest_save */
     static const unsigned char manager_opcode[] = {0x48, 0x8d, 0x0d};
     struct rip_reference *manager = NULL;
     struct jump *load = NULL;
+    unsigned manager_matches = 0;
     size_t end = function_end(image, function);
-    for (size_t i = function->BeginAddress;
-         i + sizeof(*manager) + sizeof(*load) <= end;
+    for (size_t i = callback_built; i + sizeof(*manager) + sizeof(*load) <= end;
          ++i) {
         struct rip_reference *candidate = (void *)(image->base + i);
         struct jump *next = (void *)(candidate + 1);
@@ -737,15 +745,13 @@ static bool skip_startup(const struct image *image) {
             next->opcode == CALL_REL32) {
             manager = candidate;
             load = next;
+            ++manager_matches;
         }
     }
-    expect(manager && load);
+    expect(manager_matches == 1);
     game_manager = (unsigned char *)(manager + 1) + manager->displacement;
     void *loader = (unsigned char *)(load + 1) + load->displacement;
     expect(in_image(image, game_manager, 1) && in_code(image, loader));
-
-    completion_vtable = find_completion_vtable(image, function);
-    expect(completion_vtable);
 
     struct jump *copy = find_checkpoint_copy(image, setting);
     expect(copy);
