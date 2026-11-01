@@ -19,7 +19,8 @@ Use `build.cmd`.
 
 # Installation
 
-Copy `dinput8.dll` and `FirstLightFOV.ini` next to `007FirstLight.exe`.
+Copy `dinput8.dll` next to `007FirstLight.exe`. `FirstLightFOV.ini` is created
+there on the first run.
 
 # Screenshots
 

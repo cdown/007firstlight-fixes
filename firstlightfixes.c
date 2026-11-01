@@ -801,10 +801,24 @@ static bool remove_black_bars(const struct image *image) {
     return write_code(branch, disabled, sizeof(disabled));
 }
 
+static bool write_config(const wchar_t *path, const struct config *config) {
+    FILE *file = _wfopen(path, L"w");
+    expect(file);
+
+    fprintf(file,
+            "fov_multiplier=%g\nremove_black_bars=%d\nauto_continue=%d\n",
+            config->fov_multiplier,
+            config->remove_black_bars,
+            config->auto_continue);
+    fclose(file);
+    return true;
+}
+
 static bool read_config(const wchar_t *path, struct config *config) {
     FILE *file = _wfopen(path, L"r");
     if (!file) {
         expect(errno == ENOENT);
+        write_config(path, config);
         return true;
     }
 
