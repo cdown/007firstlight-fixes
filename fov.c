@@ -198,6 +198,62 @@ static RUNTIME_FUNCTION *find_function(const struct image *image,
     }
 }
 
+static void *find_data(const struct image *image, const void *bytes,
+                       size_t length) {
+    IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(image->nt);
+    const unsigned char *needle = bytes;
+    void *found = NULL;
+    unsigned matches = 0;
+
+    for (unsigned s = 0; s < image->nt->FileHeader.NumberOfSections; ++s) {
+        IMAGE_SECTION_HEADER *section = &sections[s];
+        if (!(section->Characteristics & IMAGE_SCN_MEM_READ) ||
+            (section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
+            continue;
+
+        unsigned char *p = image->base + section->VirtualAddress;
+        unsigned char *end = p + section->Misc.VirtualSize;
+        for (; (p = memchr(p, needle[0], end - p)); ++p)
+            if (length <= (size_t)(end - p) && !memcmp(p, bytes, length)) {
+                found = p;
+                ++matches;
+            }
+    }
+
+    expect(matches == 1);
+    return found;
+}
+
+static struct rip_reference *find_label_reference(const struct image *image,
+                                                  const char *label,
+                                                  const unsigned char *opcode) {
+    const void *name = find_data(image, label, strlen(label) + 1);
+    expect(name);
+    struct rip_reference *found = NULL;
+    unsigned matches = 0;
+    IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(image->nt);
+
+    /* lea reg, [rip+disp32] */
+    for (unsigned s = 0; s < image->nt->FileHeader.NumberOfSections; ++s) {
+        IMAGE_SECTION_HEADER *section = &sections[s];
+        if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
+            continue;
+        unsigned char *code = image->base + section->VirtualAddress;
+        for (size_t i = 0; i + sizeof(*found) <= section->Misc.VirtualSize;
+             ++i) {
+            struct rip_reference *reference = (void *)(code + i);
+            if (!memcmp(reference->opcode, opcode, RIP_OPCODE_SIZE) &&
+                (unsigned char *)(reference + 1) + reference->displacement ==
+                    name) {
+                found = reference;
+                ++matches;
+            }
+        }
+    }
+    expect(matches == 1);
+    return found;
+}
+
 static unsigned char *find_letterbox(const struct image *image) {
     static const char label[] = "DrawLetterbox";
 
@@ -447,32 +503,6 @@ static size_t function_end(const struct image *image,
     return end;
 }
 
-static void *find_data(const struct image *image, const void *bytes,
-                       size_t length) {
-    IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(image->nt);
-    const unsigned char *needle = bytes;
-    void *found = NULL;
-    unsigned matches = 0;
-
-    for (unsigned s = 0; s < image->nt->FileHeader.NumberOfSections; ++s) {
-        IMAGE_SECTION_HEADER *section = &sections[s];
-        if (!(section->Characteristics & IMAGE_SCN_MEM_READ) ||
-            (section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
-            continue;
-
-        unsigned char *p = image->base + section->VirtualAddress;
-        unsigned char *end = p + section->Misc.VirtualSize;
-        for (; (p = memchr(p, needle[0], end - p)); ++p)
-            if (length <= (size_t)(end - p) && !memcmp(p, bytes, length)) {
-                found = p;
-                ++matches;
-            }
-    }
-
-    expect(matches == 1);
-    return found;
-}
-
 static void **find_vtable(const struct image *image, const char *name) {
     unsigned char *type = find_data(image, name, strlen(name) + 1);
     expect(type);
@@ -549,36 +579,6 @@ static void *leave_startup(void *provider, unsigned flags) {
     if (provider == continue_provider)
         continue_pending = false;
     return destroy_continue(provider, flags);
-}
-
-static struct rip_reference *find_label_reference(const struct image *image,
-                                                  const char *label,
-                                                  const unsigned char *opcode) {
-    const void *name = find_data(image, label, strlen(label) + 1);
-    expect(name);
-    struct rip_reference *found = NULL;
-    unsigned matches = 0;
-    IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(image->nt);
-
-    /* lea reg, [rip+disp32] */
-    for (unsigned s = 0; s < image->nt->FileHeader.NumberOfSections; ++s) {
-        IMAGE_SECTION_HEADER *section = &sections[s];
-        if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
-            continue;
-        unsigned char *code = image->base + section->VirtualAddress;
-        for (size_t i = 0; i + sizeof(*found) <= section->Misc.VirtualSize;
-             ++i) {
-            struct rip_reference *reference = (void *)(code + i);
-            if (!memcmp(reference->opcode, opcode, RIP_OPCODE_SIZE) &&
-                (unsigned char *)(reference + 1) + reference->displacement ==
-                    name) {
-                found = reference;
-                ++matches;
-            }
-        }
-    }
-    expect(matches == 1);
-    return found;
 }
 
 static void **find_completion_vtable(const struct image *image,
