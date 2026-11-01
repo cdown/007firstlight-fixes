@@ -450,6 +450,7 @@ static size_t function_end(const struct image *image,
 static void *find_data(const struct image *image, const void *bytes,
                        size_t length) {
     IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(image->nt);
+    const unsigned char *needle = bytes;
     void *found = NULL;
     unsigned matches = 0;
 
@@ -459,10 +460,11 @@ static void *find_data(const struct image *image, const void *bytes,
             (section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
             continue;
 
-        unsigned char *start = image->base + section->VirtualAddress;
-        for (size_t i = 0; i + length <= section->Misc.VirtualSize; ++i)
-            if (!memcmp(start + i, bytes, length)) {
-                found = start + i;
+        unsigned char *p = image->base + section->VirtualAddress;
+        unsigned char *end = p + section->Misc.VirtualSize;
+        for (; (p = memchr(p, needle[0], end - p)); ++p)
+            if (length <= (size_t)(end - p) && !memcmp(p, bytes, length)) {
+                found = p;
                 ++matches;
             }
     }
