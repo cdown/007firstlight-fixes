@@ -1,4 +1,4 @@
-# 007 First Light FOV fix
+# 007 First Light FOV/black bars fixes
 
 Dear IOI:
 
