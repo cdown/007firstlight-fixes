@@ -20,6 +20,7 @@
 #define LEA_RAX_RIP {0x48, 0x8d, 0x05}
 #define LEA_RCX_RIP {0x48, 0x8d, 0x0d}
 #define LEA_RDX_RIP {0x48, 0x8d, 0x15}
+#define STARTUP_CHECKPOINT "MainMenu"
 #define STRING_LITERAL 0x80000000u
 #define CALLBACK_PADDING_WORDS 2
 #define RTTI_RELATIVE_SIGNATURE 1
@@ -747,9 +748,9 @@ static bool skip_startup(const struct image *image) {
         .copy = {JMP_REL32,
                  (int32_t)((intptr_t)(copy + 1) + copy->displacement -
                            (intptr_t)&bridge->checkpoint)},
-        .checkpoint = {STRING_LITERAL | (sizeof("MainMenu") - 1),
+        .checkpoint = {STRING_LITERAL | (sizeof(STARTUP_CHECKPOINT) - 1),
                        0,
-                       "MainMenu"},
+                       STARTUP_CHECKPOINT},
     };
     DWORD old;
     expect(VirtualProtect(bridge, sizeof(*bridge), PAGE_EXECUTE_READ, &old));
