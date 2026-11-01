@@ -17,6 +17,9 @@
 #define PAGE_SIZE 0x1000
 #define JMP_REL32 0xe9
 #define CALL_REL32 0xe8
+#define LEA_RAX_RIP {0x48, 0x8d, 0x05}
+#define LEA_RCX_RIP {0x48, 0x8d, 0x0d}
+#define LEA_RDX_RIP {0x48, 0x8d, 0x15}
 #define STRING_LITERAL 0x80000000u
 #define CALLBACK_PADDING_WORDS 2
 #define RTTI_RELATIVE_SIGNATURE 1
@@ -259,7 +262,7 @@ static unsigned char *find_letterbox(const struct image *image) {
      * function that's drawing these annoying ass black bars.
      *
      * lea rdx, [rip+disp32] */
-    static const unsigned char reference_opcode[] = {0x48, 0x8d, 0x15};
+    static const unsigned char reference_opcode[] = LEA_RDX_RIP;
 
     /* The developers handily included a path that doesn't draw bars, so use
      * this to work backwards.
@@ -562,7 +565,7 @@ static void **find_completion_vtable(const struct image *image,
     void **table = NULL;
 
     /* lea rax, [rip+callback_vtable] */
-    static const unsigned char callback_opcode[] = {0x48, 0x8d, 0x05};
+    static const unsigned char callback_opcode[] = LEA_RAX_RIP;
     unsigned callback_matches = 0;
     for (size_t i = function->BeginAddress;
          i + sizeof(struct rip_reference) <= end;
@@ -632,8 +635,8 @@ static bool skip_startup(const struct image *image) {
         find_vtable(image, ".?AVZGameManagerHasContinue@JSONTemplate@@");
     void **action =
         find_vtable(image, ".?AVZGameManagerContinue@JSONTemplate@@");
-    static const unsigned char setting_opcode[] = {0x48, 0x8d, 0x05};
-    static const unsigned char boot_opcode[] = {0x48, 0x8d, 0x15};
+    static const unsigned char setting_opcode[] = LEA_RAX_RIP;
+    static const unsigned char boot_opcode[] = LEA_RDX_RIP;
     struct rip_reference *setting =
         find_label_reference(image, "INITIAL_CHECKPOINT", setting_opcode);
     struct rip_reference *boot =
@@ -705,7 +708,7 @@ static bool skip_startup(const struct image *image) {
      *
      * lea rcx, [rip+game_manager]
      * call load_latest_save */
-    static const unsigned char manager_opcode[] = {0x48, 0x8d, 0x0d};
+    static const unsigned char manager_opcode[] = LEA_RCX_RIP;
     struct rip_reference *manager = NULL;
     struct jump *load = NULL;
     unsigned manager_matches = 0;
@@ -737,7 +740,7 @@ static bool skip_startup(const struct image *image) {
     /* lea rdx, [rip+checkpoint]
      * jmp copy_string */
     *bridge = (struct checkpoint_bridge){
-        .source = {{0x48, 0x8d, 0x15},
+        .source = {LEA_RDX_RIP,
                    offsetof(struct checkpoint_bridge, checkpoint) -
                        sizeof(struct rip_reference)},
         .copy = {JMP_REL32,
