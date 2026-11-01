@@ -255,8 +255,6 @@ static struct rip_reference *find_label_reference(const struct image *image,
 }
 
 static unsigned char *find_letterbox(const struct image *image) {
-    static const char label[] = "DrawLetterbox";
-
     /* Load DrawLetterbox into rdx. So we can handily use this to locate the
      * function that's drawing these annoying ass black bars.
      *
@@ -269,55 +267,31 @@ static unsigned char *find_letterbox(const struct image *image) {
      * mov qword ptr [rcx], rbx */
     static const unsigned char passthrough_store[] = {0x48, 0x89, 0x19};
 
+    struct rip_reference *reference =
+        find_label_reference(image, "DrawLetterbox", reference_opcode);
+    expect(reference);
+    RUNTIME_FUNCTION *function = find_function(image, reference);
+    expect(function);
+
+    unsigned char *entry = image->base + function->BeginAddress;
+    size_t length = function->EndAddress - function->BeginAddress;
     unsigned char *branch = NULL;
     unsigned matches = 0;
-    IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(image->nt);
-    for (unsigned s = 0; s < image->nt->FileHeader.NumberOfSections; ++s) {
-        IMAGE_SECTION_HEADER *section = &sections[s];
-        if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
-            continue;
-
-        unsigned char *code = image->base + section->VirtualAddress;
-        size_t size = section->Misc.VirtualSize;
-
-        for (size_t i = 0; i + sizeof(struct rip_reference) <= size; ++i) {
-            struct rip_reference *reference = (void *)(code + i);
-            if (memcmp(reference->opcode,
-                       reference_opcode,
-                       sizeof(reference_opcode)))
-                continue;
-
-            unsigned char *name =
-                (unsigned char *)(reference + 1) + reference->displacement;
-            if (!in_image(image, name, sizeof(label)) ||
-                memcmp(name, label, sizeof(label)))
-                continue;
-
-            RUNTIME_FUNCTION *function = find_function(image, code + i);
-            expect(function);
-
-            unsigned char *entry = image->base + function->BeginAddress;
-            size_t length = function->EndAddress - function->BeginAddress;
-            for (size_t offset = 0;
-                 offset + sizeof(struct letterbox_skip) <= length;
-                 ++offset) {
-                struct letterbox_skip *skip = (void *)(entry + offset);
-                /* The branch skips the passthrough when drawing is enabled:
-                 *
-                 * jne draw_bars
-                 * mov qword ptr [rcx], rbx
-                 * jmp epilogue
-                 * draw_bars: */
-                if (skip->condition == JNZ_SHORT &&
-                    skip->distance ==
-                        sizeof(skip->store) + sizeof(skip->exit) &&
-                    !memcmp(
-                        skip->store, passthrough_store, sizeof(skip->store)) &&
-                    skip->exit.opcode == JMP_REL32) {
-                    branch = entry + offset;
-                    ++matches;
-                }
-            }
+    for (size_t offset = 0; offset + sizeof(struct letterbox_skip) <= length;
+         ++offset) {
+        struct letterbox_skip *skip = (void *)(entry + offset);
+        /* The branch skips the passthrough when drawing is enabled:
+         *
+         * jne draw_bars
+         * mov qword ptr [rcx], rbx
+         * jmp epilogue
+         * draw_bars: */
+        if (skip->condition == JNZ_SHORT &&
+            skip->distance == sizeof(skip->store) + sizeof(skip->exit) &&
+            !memcmp(skip->store, passthrough_store, sizeof(skip->store)) &&
+            skip->exit.opcode == JMP_REL32) {
+            branch = entry + offset;
+            ++matches;
         }
     }
 
