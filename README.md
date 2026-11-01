@@ -1,14 +1,17 @@
-# 007 First Light FOV/black bars fixes
+# 007 First Light FOV/black bars/intro fixes
 
 Dear IOI:
 
 1. Why the fuck is there no FOV slider in the game?!
 2. Why are there not only horizontal, but also _vertical_ black bars during
    cutscenes?!?
+3. Why is the intro so ungodly long and can't be skipped?!
 
 This is an attempt to fix this hideous mess. I tried to use reflection and
 working backwards from render pass metadata as much as possible so hopefully
 this should keep working when the game is updated.
+
+By default we also skip intros and resume the latest save, if there is one.
 
 # Compilation
 
