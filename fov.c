@@ -30,6 +30,7 @@
 #define RIP_OPCODE_SIZE 3
 #define RESOURCE_STORE_SIZE 3
 #define SETTER_PREFIX_SIZE 7
+#define BYTE_FIELD_OPCODE_SIZE 2
 #define JNZ_SHORT 0x75
 #define CONFIG_KEY_MAX 31
 #define STRINGIFY_(x) #x
@@ -117,10 +118,10 @@ struct checkpoint_copy {
     struct jump call;
 };
 struct availability_update {
-    unsigned char compare[2];
+    unsigned char compare[BYTE_FIELD_OPCODE_SIZE];
     int32_t read_field;
     unsigned char condition, distance;
-    unsigned char store[2];
+    unsigned char store[BYTE_FIELD_OPCODE_SIZE];
     int32_t write_field;
 };
 #pragma pack(pop)
