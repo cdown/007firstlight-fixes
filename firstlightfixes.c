@@ -183,8 +183,8 @@ static struct image open_image(void *base) {
     return (struct image){base, nt};
 }
 
-/* MSVC splits functions into unwind regions, so let's follow chained records
- * to the entry point */
+/* An address can belong to a later part of a function. Follow chained unwind
+ * records to find the entry point before searching its code. */
 static RUNTIME_FUNCTION *find_function(const struct image *image,
                                        const void *address) {
     DWORD64 base;
@@ -238,7 +238,6 @@ static struct rip_reference *find_label_reference(const struct image *image,
     unsigned matches = 0;
     IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(image->nt);
 
-    /* lea reg, [rip+disp32] */
     for (unsigned s = 0; s < image->nt->FileHeader.NumberOfSections; ++s) {
         IMAGE_SECTION_HEADER *section = &sections[s];
         if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
@@ -260,16 +259,10 @@ static struct rip_reference *find_label_reference(const struct image *image,
 }
 
 static unsigned char *find_letterbox(const struct image *image) {
-    /* Load DrawLetterbox into rdx. So we can handily use this to locate the
-     * function that's drawing these annoying ass black bars.
-     *
-     * lea rdx, [rip+disp32] */
     static const unsigned char reference_opcode[] = LEA_RDX_RIP;
 
-    /* The developers handily included a path that doesn't draw bars, so use
-     * this to work backwards.
-     *
-     * mov qword ptr [rcx], rbx */
+    /* The path that doesn't draw bars has this store immediately after the
+     * conditional branch, so let's use it to identify that branch. */
     static const unsigned char passthrough_store[] = {0x48, 0x89, 0x19};
 
     struct rip_reference *reference =
@@ -285,7 +278,8 @@ static unsigned char *find_letterbox(const struct image *image) {
     for (size_t offset = 0; offset + sizeof(struct letterbox_skip) <= length;
          ++offset) {
         struct letterbox_skip *skip = (void *)(entry + offset);
-        /* The branch skips the passthrough when drawing is enabled:
+        /* This branch selects drawing the bars. Removing it leaves the path
+         * that passes the image through without them:
          *
          * jne draw_bars
          * mov qword ptr [rcx], rbx
@@ -307,9 +301,8 @@ static unsigned char *find_letterbox(const struct image *image) {
 static struct vex_instruction *find_fov(const struct image *image) {
     static const char name[] = "m_FOVOverrideValue";
 
-    /* The setter will copy the new FOV from [rdx] to [rcx], then move rcx back
-     * from the field to the camera object. That then must agree with the field
-     * offset in the reflection metadata
+    /* Check that the setter uses the field described by the FOV metadata.
+     * After writing the value, it moves rcx back to the camera object.
      *
      * mov eax, dword ptr [rdx]
      * mov dword ptr [rcx], eax
@@ -317,8 +310,8 @@ static struct vex_instruction *find_fov(const struct image *image) {
     static const unsigned char setter_prefix[] = {
         0x8b, 0x02, 0x89, 0x01, 0x48, 0x81, 0xc1};
 
-    /* Load the camera's FOV into xmm0. Find the read so that we can scale the
-     * value without changing the stored FOV
+    /* Find where the camera reads its FOV so we can scale the value it uses
+     * without changing the stored setting.
      *
      * vmovss xmm0, dword ptr [rcx+disp32] */
     static const unsigned char load_opcode[] = {0xc5, 0xfa, 0x10, 0x81};
@@ -354,9 +347,8 @@ static struct vex_instruction *find_fov(const struct image *image) {
     expect(!memcmp(setter->prefix, setter_prefix, sizeof(setter_prefix)));
     expect(setter->adjustment == -(int64_t)property->offset);
 
-    /* The setter ends by jumping to the camera update function. Follow that
-     * jump so we can limit our search for the FOV read to the code that is
-     * gonna use it */
+    /* The setter jumps to the camera update function, where the FOV is used.
+     * So let's limit our search to there */
     expect(setter->update.opcode == JMP_REL32);
     unsigned char *update =
         (unsigned char *)(setter + 1) + setter->update.displacement;
@@ -385,12 +377,9 @@ static void *allocate_near(const void *site, const void *target) {
         min((uintptr_t)site, (uintptr_t)target) & ~(ALLOCATION_GRANULARITY - 1);
     uintptr_t high =
         max((uintptr_t)site, (uintptr_t)target) & ~(ALLOCATION_GRANULARITY - 1);
-    /* The caller has to reach the bridge, and the bridge has to reach the
-     * original function. Keep it within jump range of both ends.
-     *
-     * call bridge
-     * bridge: ...
-     * jmp original_target */
+    /* The game's call or jump must reach the bridge, and the bridge must jump
+     * back into the game. Both use 32-bit relative offsets, so allocate within
+     * ~2 GiB to avoid shenanigans */
     MEM_ADDRESS_REQUIREMENTS range = {
         .LowestStartingAddress = (void *)(high - BRIDGE_REACH),
         .HighestEndingAddress = (void *)(low + BRIDGE_REACH - 1),
@@ -415,9 +404,9 @@ static struct bridge *make_bridge(const struct vex_instruction *site,
     if (!bridge)
         return NULL;
 
-    /* Repeat the original FOV load, multiply xmm0 by our nearby factor, then
-     * jump back to the instruction after that load. That way, only the value
-     * in the register changes.
+    /* Load and scale the FOV, then resume after the original load. The camera
+     * then uses this value, without it getting written back to the game
+     * internal var.
      *
      * vmovss xmm0, dword ptr [rcx+field]
      * vmulss xmm0, xmm0, dword ptr [rip+disp32]
@@ -466,6 +455,7 @@ static bool in_code(const struct image *image, const void *address) {
 static size_t function_end(const struct image *image,
                            const RUNTIME_FUNCTION *function) {
     size_t end = function->EndAddress;
+
     /* The first unwind region can be just the prologue. Keep the adjoining
      * regions too, as long as they chain back to the same function. */
     while (in_code(image, image->base + end)) {
@@ -483,6 +473,7 @@ static size_t function_end(const struct image *image,
 }
 
 static void **find_vtable(const struct image *image, const char *name) {
+    /* Follow the C++ type name to its RTTI locator. */
     unsigned char *type = find_data(image, name, strlen(name) + 1);
     expect(type);
     type -= sizeof(struct type_descriptor);
@@ -516,8 +507,9 @@ static unsigned char *find_virtual_pattern(const struct image *image,
             start = image->base + function->BeginAddress;
             end = image->base + function_end(image, function);
         } else {
-            /* Leaf methods don't need unwind records. The compiler pads the
-             * space after them with breakpoints, so stop there instead. */
+            /* This is a bit janky since we don't have unwind data. Let's use
+             * the first 0xcc byte as a heuristic scan limit. This can stop
+             * inside an instruction. */
             while (in_code(image, end) && *end != INT3)
                 ++end;
         }
@@ -537,13 +529,15 @@ static unsigned char *find_virtual_pattern(const struct image *image,
 static void resumed(int result) { (void)result; }
 
 static bool resume_latest(void *provider) {
+    /* Let the game update save availability before deciding to continue. */
     bool changed = update_continue(provider);
     if (!continue_provider)
         continue_provider = provider;
 
     if (continue_pending && provider == continue_provider &&
         *(bool *)((unsigned char *)provider + continue_offset)) {
-        /* Loading can update the UI before returning */
+        /* Loading can update the UI and call us again before returning. Clear
+         * the request first so we only start loading once. */
         continue_pending = false;
         struct completion completion = {
             .function = {.vtable = completion_vtable, .callback = resumed},
@@ -566,7 +560,6 @@ static void **find_completion_vtable(const struct image *image,
     size_t end = function_end(image, function);
     void **table = NULL;
 
-    /* lea rax, [rip+callback_vtable] */
     static const unsigned char callback_opcode[] = LEA_RAX_RIP;
     unsigned callback_matches = 0;
     for (size_t i = function->BeginAddress;
@@ -588,8 +581,9 @@ static void **find_completion_vtable(const struct image *image,
     }
     expect(callback_matches == 1);
 
-    /* With no object bound, the game's invoker reads the function pointer and
-     * passes the result to it, so let's check that it agrees with our layout.
+    /* Belt and suspenders check that the game's callback invoker can use our
+     * completion layout to pass the load result to a function with no bound
+     * object.
      *
      * mov r8, qword ptr [rcx+receiver]
      * ...
@@ -610,7 +604,10 @@ static void **find_completion_vtable(const struct image *image,
 
 static struct jump *find_checkpoint_copy(const struct image *image,
                                          const void *setting) {
-    /* lea rdx, [rax+default_checkpoint]
+    /* Find where startup copies its default checkpoint, so we can replace it
+     * with MainMenu.
+     *
+     * lea rdx, [rax+default_checkpoint]
      * call copy_string */
     static const unsigned char source_opcode[] = {0x48, 0x8d, 0x50};
     RUNTIME_FUNCTION *function = find_function(image, setting);
@@ -645,9 +642,8 @@ static bool skip_startup(const struct image *image) {
         find_label_reference(image, "BootDontWaitForInput", boot_opcode);
     expect(availability && action && setting && boot);
 
-    /* The developers were kind enough to have a path for continuing without
-     * having to go through the rigamarole of keyboard input. So let's remove
-     * the branch to go that way
+    /* We branch out to wait for input, so let's just remove that so that we'll
+     * immediately start the game.
      *
      * test sil, sil
      * je wait_for_input */
@@ -666,7 +662,10 @@ static bool skip_startup(const struct image *image) {
         }
     expect(wait_matches == 1);
 
-    /* cmp byte ptr [rcx+field], al
+    /* The hook waits for this field to see if "continue" is available, so
+     * let's make sure it's ready.
+     *
+     * cmp byte ptr [rcx+field], al
      * je unchanged
      * mov byte ptr [rcx+field], al */
     static const unsigned char compare[] = {0x38, 0x81};
@@ -683,7 +682,8 @@ static bool skip_startup(const struct image *image) {
     continue_offset = update->read_field;
     expect(continue_offset > 0);
 
-    /* Follow the code behind the continue button.
+    /* It's ready! Now let's follow the continue button's handler to find the
+     * game's save loader.
      *
      * call continue_handler
      * xor eax, eax
@@ -705,8 +705,7 @@ static bool skip_startup(const struct image *image) {
         find_completion_vtable(image, function, &callback_built);
     expect(completion_vtable);
 
-    /* Ask the game manager to load the latest save. The dialog lookup before
-     * this uses the same instructions, so start after the callback is built.
+    /* Ask the game manager to load the latest save.
      *
      * lea rcx, [rip+game_manager]
      * call load_latest_save */
@@ -739,7 +738,9 @@ static bool skip_startup(const struct image *image) {
     struct checkpoint_bridge *bridge = allocate_near(copy, target);
     expect(bridge);
 
-    /* lea rdx, [rip+checkpoint]
+    /* Set MainMenu as the default startup checkpoint.
+     *
+     * lea rdx, [rip+checkpoint]
      * jmp copy_string */
     *bridge = (struct checkpoint_bridge){
         .source = {LEA_RDX_RIP,
