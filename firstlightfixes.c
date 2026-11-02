@@ -11,6 +11,7 @@
 
 #pragma comment(lib, "onecore")
 
+#define PROG_NAME L"firstlightfixes"
 #define DEFAULT_FOV_MULTIPLIER 1.4f
 #define ALLOCATION_GRANULARITY 0x10000ull
 #define BRIDGE_REACH (INT32_MAX + 1ull - 2 * ALLOCATION_GRANULARITY)
@@ -879,10 +880,10 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved) {
     if (_wcsicmp(name, L"007FirstLight.exe"))
         return TRUE;
 
-    wcscpy(name, L"FirstLightFOV.log");
+    wcscpy(name, PROG_NAME L".log");
     log_file = _wfopen(path, L"w");
 
-    wcscpy(name, L"FirstLightFOV.ini");
+    wcscpy(name, PROG_NAME L".ini");
     init_fixes(path, reserved);
 
     if (log_file)
