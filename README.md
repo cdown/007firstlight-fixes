@@ -1,15 +1,17 @@
 # 007 First Light FOV/black bars/intro fixes
 
-Dear IOI:
+I love First Light. That said, there are a bunch of annoying things that grate
+on me, like that you can't adjust the very tight FOV on ultrawide, the black
+bars in cutscenes, and that you have to go through the super long warnings and
+intro screens every time you start the game...
 
-1. Why the fuck is there no FOV slider in the game?!
-2. Why are there not only horizontal, but also _vertical_ black bars during
-   cutscenes?!?
-3. Why is the intro so ungodly long and can't be skipped?!
+As such, here is a small set of fixes that bypass all the intro screens,
+automatically starts the latest game, allows FOV adjustment, and removes all
+black bars.
 
-This is an attempt to fix this hideous mess. I tried to use reflection and
-working backwards from render pass metadata as much as possible so hopefully
-this should keep working when the game is updated.
+I tried to use reflection and working backwards from render pass metadata as
+much as possible so hopefully this should keep working when the game is
+updated.
 
 By default we also skip intros and resume the latest save, if there is one.
 
